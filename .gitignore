@@ -1,0 +1,68 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Git
+.git-credentials
+
+# ===== STM32 / HAL =====
+HAL/build/
+HAL/mx.scratch/
+
+# CubeMX / Keil user files
+HAL/MDK-ARM/*.bak
+HAL/MDK-ARM/*.dep
+HAL/MDK-ARM/*.lnp
+HAL/MDK-ARM/*.plg
+HAL/MDK-ARM/*.uvoptx
+HAL/MDK-ARM/*.uvguix*
+HAL/MDK-ARM/*.axf
+HAL/MDK-ARM/*.map
+HAL/MDK-ARM/*.lst
+HAL/MDK-ARM/*.o
+
+# Embedded build outputs
+*.o
+*.obj
+*.d
+*.su
+*.elf
+*.axf
+*.bin
+*.hex
+*.map
+*.lst
+
+# ===== Android / BluetoothMonitor =====
+BluetoothMonitor/.gradle/
+BluetoothMonitor/build/
+BluetoothMonitor/captures/
+BluetoothMonitor/.externalNativeBuild/
+BluetoothMonitor/.cxx/
+BluetoothMonitor/local.properties
+BluetoothMonitor/**/build/
+
+# Android Studio project noise
+BluetoothMonitor/.idea/caches/
+BluetoothMonitor/.idea/libraries/
+BluetoothMonitor/.idea/modules.xml
+BluetoothMonitor/.idea/workspace.xml
+BluetoothMonitor/.idea/navEditor.xml
+BluetoothMonitor/.idea/assetWizardSettings.xml
+
+# Local docs / experiments
+开题报告与论文/
+新建文件夹/
+
+# Optional CMSIS extras (large, not needed to build this project)
+HAL/Drivers/CMSIS/DSP/
+HAL/Drivers/CMSIS/NN/
+HAL/Drivers/CMSIS/RTOS/
+HAL/Drivers/CMSIS/RTOS2/

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#000000</color>
+    <color name="white">#FFFFFF</color>
+    
+    <!-- 苹果风格深色背景 -->
+    <color name="apple_bg">#000000</color>
+    <color name="apple_card">#1C1C1E</color>
+    
+    <!-- 睡眠圆环渐变色 -->
+    <color name="sleep_purple_start">#7D58FF</color>
+    <color name="sleep_purple_end">#A18DFF</color>
+    <color name="sleep_pink">#FF64B4</color>
+    
+    <!-- 文本颜色 -->
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#8E8E93</color>
+    
+    <!-- 功能色 -->
+    <color name="color_low">#FF453A</color>
+    <color name="color_normal">#32D74B</color>
+    <color name="color_heart">#FF2D55</color>
+</resources>
