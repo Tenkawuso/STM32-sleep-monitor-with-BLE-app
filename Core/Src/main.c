@@ -87,6 +87,8 @@ MAX9814_HandleTypeDef g_max9814;
 uint16_t adc_buf[256];
 volatile uint8_t g_adc_half_ready = 0;
 volatile uint8_t g_adc_full_ready = 0;
+volatile uint16_t g_adc_half_pending = 0;
+volatile uint16_t g_adc_full_pending = 0;
 
 uint32_t g_last_red = 0;
 uint32_t g_last_ir = 0;
@@ -112,7 +114,7 @@ uint32_t g_sleep_last_change_tick = 0;
 static uint8_t s_uart_tx_buf[UART_TX_BUF_SIZE];
 static volatile uint16_t s_tx_rd = 0;
 static volatile uint16_t s_tx_wr = 0;
-static volatile uint8_t s_tx_sending = 0;  /* 1 while HAL_UART_Transmit_DMA is in-flight */
+static volatile uint8_t s_tx_sending = 0;  /* 1 while HAL_UART_Transmit_IT is in-flight */
 
 HC06_HandleTypeDef g_hc06;
 uint8_t g_bt_linked = 0;
@@ -159,7 +161,7 @@ static void ProcessSnoreFrame(const uint16_t *samples, uint16_t count);
 
 /**
  * @brief  Push bytes into the UART TX ring buffer.
- *         Overwrites oldest data if the buffer is full.
+ *         Drops new bytes when the buffer is full.
  */
 static void UartTx_Push(const uint8_t *data, uint16_t len)
 {
@@ -178,12 +180,12 @@ static void UartTx_Push(const uint8_t *data, uint16_t len)
 }
 
 /**
- * @brief  Called in the main loop to drain the ring buffer via DMA.
+ * @brief  Called in the main loop to drain the ring buffer via IRQ TX.
  *         If a transfer is already in-flight, it returns immediately.
  */
 static void UartTx_Poll(void)
 {
-  static uint8_t s_dma_buf[UART_TX_BUF_SIZE];
+  static uint8_t s_tx_chunk[UART_TX_BUF_SIZE];
   uint16_t len;
   uint16_t end;
 
@@ -199,26 +201,26 @@ static void UartTx_Poll(void)
   }
 
   /* Copy contiguous region out of the ring to a static staging buffer
-     (HAL_UART_Transmit_DMA holds the pointer until the DMA callback). */
+     (HAL_UART_Transmit_IT keeps using the pointer until TX complete callback). */
   end = (uint16_t)((UART_TX_BUF_SIZE - s_tx_rd) < len
                    ? (UART_TX_BUF_SIZE - s_tx_rd)
                    : len);
   for (uint16_t i = 0U; i < end; i++)
   {
-    s_dma_buf[i] = s_uart_tx_buf[(uint16_t)((s_tx_rd + i) & (UART_TX_BUF_SIZE - 1U))];
+    s_tx_chunk[i] = s_uart_tx_buf[(uint16_t)((s_tx_rd + i) & (UART_TX_BUF_SIZE - 1U))];
   }
 
   s_tx_rd = (uint16_t)((s_tx_rd + end) & (UART_TX_BUF_SIZE - 1U));
   s_tx_sending = 1U;
 
-  if (HAL_UART_Transmit_DMA(&huart1, s_dma_buf, end) != HAL_OK)
+  if (HAL_UART_Transmit_IT(&huart1, s_tx_chunk, end) != HAL_OK)
   {
     s_tx_sending = 0U; /* fall back, retry next poll */
   }
 }
 
 /**
- * @brief  UART TX DMA completion callback.
+ * @brief  UART TX completion callback.
  */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
@@ -547,8 +549,8 @@ static void SendTelemetry(const PPG_Result_t *result)
 
   if (len > 0)
   {
-    HAL_StatusTypeDef st = HAL_UART_Transmit(&huart1, (uint8_t *)line, (uint16_t)len, 100U);
-    g_bt_linked = (st == HAL_OK) ? 1U : 0U;
+    UartTx_Push((const uint8_t *)line, (uint16_t)len);
+    g_bt_linked = 1U;
   }
 }
 
@@ -704,27 +706,20 @@ static void ProcessSnoreFrame(const uint16_t *samples, uint16_t count)
 
 static void ProcessMusicCommand(void)
 {
-  HAL_StatusTypeDef st;
   static const uint8_t cmd_play[] = "CMD:PLAY\r\n";
   static const uint8_t cmd_stop[] = "CMD:STOP\r\n";
 
   if ((g_music_play_sent == 0U) && (g_snd_percent >= NOISE_PLAY_THRESHOLD_PCT))
   {
-    st = HAL_UART_Transmit(&huart1, (uint8_t *)cmd_play, (uint16_t)(sizeof(cmd_play) - 1U), 100U);
-    if (st == HAL_OK)
-    {
-      g_music_play_sent = 1U;
-      g_bt_linked = 1U;
-    }
+    UartTx_Push(cmd_play, (uint16_t)(sizeof(cmd_play) - 1U));
+    g_music_play_sent = 1U;
+    g_bt_linked = 1U;
   }
   else if ((g_music_play_sent != 0U) && (g_snd_percent <= NOISE_STOP_THRESHOLD_PCT))
   {
-    st = HAL_UART_Transmit(&huart1, (uint8_t *)cmd_stop, (uint16_t)(sizeof(cmd_stop) - 1U), 100U);
-    if (st == HAL_OK)
-    {
-      g_music_play_sent = 0U;
-      g_bt_linked = 1U;
-    }
+    UartTx_Push(cmd_stop, (uint16_t)(sizeof(cmd_stop) - 1U));
+    g_music_play_sent = 0U;
+    g_bt_linked = 1U;
   }
 }
 
@@ -799,9 +794,11 @@ int main(void)
     /* USER CODE BEGIN 3 */
     HandleKeyEvents();
 
-    if ((HAL_GetTick() - tick_50ms) >= 50U)
+    UartTx_Poll();
+
+    while ((HAL_GetTick() - tick_50ms) >= 50U)
     {
-      tick_50ms = HAL_GetTick();
+      tick_50ms += 50U;
       if ((g_key_pressed != 0U) && (HAL_GPIO_ReadPin(KEY1_GPIO_Port, KEY1_Pin) == GPIO_PIN_SET))
       {
         uint32_t press_ms = HAL_GetTick() - g_key_press_tick;
@@ -815,28 +812,32 @@ int main(void)
       }
     }
 
-    if (g_adc_half_ready != 0U)
+    while (g_adc_half_pending != 0U)
     {
+      __disable_irq();
+      g_adc_half_pending--;
+      __enable_irq();
       MAX9814_ProcessBlock(&g_max9814, &adc_buf[0], 128U);
       ProcessSnoreFrame(&adc_buf[0], SNORE_BLOCK_SIZE);
-      g_adc_half_ready = 0U;
     }
 
-    if (g_adc_full_ready != 0U)
+    while (g_adc_full_pending != 0U)
     {
+      __disable_irq();
+      g_adc_full_pending--;
+      __enable_irq();
       MAX9814_ProcessBlock(&g_max9814, &adc_buf[128], 128U);
       ProcessSnoreFrame(&adc_buf[128], SNORE_BLOCK_SIZE);
-      g_adc_full_ready = 0U;
     }
 
-    if ((HAL_GetTick() - tick_10ms) >= 10U)
+    while ((HAL_GetTick() - tick_10ms) >= 10U)
     {
       uint8_t wr = 0;
       uint8_t rd = 0;
       uint8_t avail;
       HAL_StatusTypeDef st;
 
-      tick_10ms = HAL_GetTick();
+      tick_10ms += 10U;
       st = MAX30102_GetFifoPtrs(&g_max30102, &wr, &rd);
       if (st == HAL_OK)
       {
@@ -880,7 +881,7 @@ int main(void)
     if ((HAL_GetTick() - tick_1000ms) >= 1000U)
     {
       PPG_Result_t state_result;
-      tick_1000ms = HAL_GetTick();
+      tick_1000ms += 1000U;
       g_lux = Value_GY30();
       g_snd_percent = MAX9814_GetLevelPercent(&g_max9814);
       PPG_Update1s();
@@ -891,16 +892,16 @@ int main(void)
       ProcessMusicCommand();
     }
 
-    if ((HAL_GetTick() - tick_30ms) >= 30U)
+    while ((HAL_GetTick() - tick_30ms) >= 30U)
     {
-      tick_30ms = HAL_GetTick();
+      tick_30ms += 30U;
       ProcessLedDimmingStep();
     }
 
     if ((HAL_GetTick() - tick_200ms) >= 200U)
     {
       PPG_Result_t result;
-      tick_200ms = HAL_GetTick();
+      tick_200ms += 200U;
       result = PPG_GetResult();
       RenderPage(&result);
     }
@@ -1205,6 +1206,10 @@ void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc)
 {
   if (hadc->Instance == ADC1)
   {
+    if (g_adc_half_pending < 0xFFFFU)
+    {
+      g_adc_half_pending++;
+    }
     g_adc_half_ready = 1U;
   }
 }
@@ -1213,6 +1218,10 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 {
   if (hadc->Instance == ADC1)
   {
+    if (g_adc_full_pending < 0xFFFFU)
+    {
+      g_adc_full_pending++;
+    }
     g_adc_full_ready = 1U;
   }
 }
