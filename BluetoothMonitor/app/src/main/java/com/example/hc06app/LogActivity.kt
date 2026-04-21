@@ -40,6 +40,7 @@ class LogActivity : AppCompatActivity(), BluetoothDataBridge.DataListener {
 
     // 实现了 DataListener 接口的其他方法 (在 LogActivity 中暂时只关注 rawLog)
     override fun onDataReceived(hr: String, spo2: String, slp: String, lgt: String, ns: String) {}
+    override fun onSnoreDetected(totalCount: Int) {}
     override fun onStatusUpdate(status: String) {}
 
     override fun onDestroy() {

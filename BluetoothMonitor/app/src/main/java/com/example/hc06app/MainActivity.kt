@@ -142,8 +142,10 @@ class MainActivity : AppCompatActivity(), BluetoothDataBridge.DataListener {
 
         watchdogRunnable = Runnable {
             if (shouldAutoReconnect && !bleConnected && !isConnecting) {
-                Log.w(TAG, "watchdog: BLE disconnected, trigger reconnect")
-                scheduleReconnect("watchdog")
+                if (hasRequiredPermissions()) {
+                    Log.w(TAG, "watchdog: BLE disconnected, trigger reconnect")
+                    scheduleReconnect("watchdog")
+                }
             }
             handler.postDelayed(watchdogRunnable!!, CONNECTION_WATCHDOG_MS)
         }
@@ -174,6 +176,16 @@ class MainActivity : AppCompatActivity(), BluetoothDataBridge.DataListener {
 
     override fun onRawLog(log: String) {
         // MainActivity 只需要接收数据，暂时不需要处理原始日志
+    }
+
+    private fun hasRequiredPermissions(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) return false
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) return false
+        } else {
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return false
+        }
+        return true
     }
 
     private fun checkPermissionsAndConnect() {
@@ -378,6 +390,10 @@ class MainActivity : AppCompatActivity(), BluetoothDataBridge.DataListener {
         reconnectRunnable = Runnable {
             reconnectScheduled = false
             if (shouldAutoReconnect && !bleConnected) {
+                if (!hasRequiredPermissions()) {
+                    Log.w(TAG, "[$reason] Missing permissions, skip reconnect")
+                    return@Runnable
+                }
                 handler.post {
                     tvStatus.text = "正在自动重连($reconnectAttempts)..."
                 }
