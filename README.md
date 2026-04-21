@@ -2,6 +2,8 @@
 
 基于 STM32 的智能助眠与睡眠质量监测系统，包含嵌入式固件（HAL）与 Android 应用（BluetoothMonitor）。
 
+> 该项目全程由 GPT 与 Gemini 模型构建。
+
 ## 项目功能
 
 - 生理信号监测：通过 MAX30102 采集 PPG，计算心率（HR）与血氧（SpO2）。
